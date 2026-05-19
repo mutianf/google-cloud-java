@@ -489,6 +489,153 @@ public class SessionPoolImplTest {
     assertThat(containsHeader).isTrue();
   }
 
+  @Test
+  public void testStackOverflowPreventionOnImmediateFailure() {
+    // Mock SessionCreationBudget to return false so no real sessions are created on startup
+    SessionCreationBudget budget = mock(SessionCreationBudget.class);
+    when(budget.tryReserveSession()).thenReturn(false);
+
+    // Construct a custom SessionPoolImpl with our mock budget
+    SessionPoolImpl<OpenFakeSessionRequest> testPool =
+        new SessionPoolImpl<>(
+            metrics,
+            FeatureFlags.getDefaultInstance(),
+            CLIENT_INFO,
+            configManager,
+            channelPool,
+            CallOptions.DEFAULT,
+            FakeDescriptor.FAKE_SESSION,
+            "overflow-pool",
+            executor,
+            budget);
+
+    // Start the pool
+    testPool.start(OpenFakeSessionRequest.getDefaultInstance(), new Metadata());
+
+    // Create a custom session that fails immediately on startRpc or newCall
+    Session mockSession =
+        new Session() {
+          @Override
+          public SessionState getState() {
+            return SessionState.READY;
+          }
+
+          @Override
+          public Instant getLastStateChange() {
+            return Instant.now();
+          }
+
+          @Override
+          public OpenParams getOpenParams() {
+            return null;
+          }
+
+          @Override
+          public boolean isOpenParamsUpdated() {
+            return false;
+          }
+
+          @Override
+          public com.google.bigtable.v2.PeerInfo getPeerInfo() {
+            return com.google.bigtable.v2.PeerInfo.newBuilder()
+                .setApplicationFrontendId(12345L)
+                .build();
+          }
+
+          @Override
+          public String getLogName() {
+            return "mock-session";
+          }
+
+          @Override
+          public Instant getNextHeartbeat() {
+            return Instant.MAX;
+          }
+
+          @Override
+          public void start(OpenSessionRequest req, Metadata headers, Listener sessionListener) {}
+
+          @Override
+          public void close(CloseSessionRequest req) {}
+
+          @Override
+          public void forceClose(CloseSessionRequest reason) {}
+
+          @Override
+          public <OpenReqT extends Message, ReqT extends Message, RespT extends Message>
+              VRpc<ReqT, RespT> newCall(VRpcDescriptor<OpenReqT, ReqT, RespT> descriptor)
+                  throws IllegalStateException {
+            return new VRpc<ReqT, RespT>() {
+              @Override
+              public void start(ReqT req, VRpcCallContext ctx, VRpcListener<RespT> listener) {
+                listener.onClose(
+                    VRpcResult.createRejectedError(
+                        Status.INTERNAL.withDescription("immediate failure")));
+              }
+
+              @Override
+              public void cancel(String message, Throwable cause) {}
+
+              @Override
+              public void requestNext() {}
+            };
+          }
+        };
+
+    int numPending = 5000;
+    java.util.concurrent.atomic.AtomicInteger closedCounter =
+        new java.util.concurrent.atomic.AtomicInteger(0);
+
+    synchronized (testPool) {
+      // Register our mock session to the pool
+      SessionList.SessionHandle handle = testPool.sessions.newHandle(mockSession);
+      handle.onSessionStarted();
+
+      // Checkout the session once to make the ready pool empty
+      testPool.sessions.checkoutSession(testPool.sessions.getAfesWithReadySessions().get(0));
+
+      // Queue a large number of pending calls (e.g., 5,000)
+      for (int i = 0; i < numPending; i++) {
+        VRpc<SessionFakeScriptedRequest, SessionFakeScriptedResponse> vrpc =
+            testPool.newCall(FakeDescriptor.SCRIPTED);
+        vrpc.start(
+            SessionFakeScriptedRequest.getDefaultInstance(),
+            VRpcCallContext.create(Deadline.after(1, TimeUnit.MINUTES), true, vrpcTracer),
+            new VRpc.VRpcListener<SessionFakeScriptedResponse>() {
+              @Override
+              public void onMessage(SessionFakeScriptedResponse msg) {}
+
+              @Override
+              public void onClose(VRpcResult result) {
+                closedCounter.incrementAndGet();
+              }
+            });
+      }
+
+      // Now return the checked out session
+      handle.onVRpcFinish(Duration.ZERO, VRpcResult.createRejectedError(Status.INTERNAL));
+
+      // Manually trigger draining now that the session is ready
+      testPool.tryDrainPendingRpcs();
+    }
+
+    // Wait for the asynchronous draining to complete
+    long timeoutMs = 10_000;
+    long start = System.currentTimeMillis();
+    try {
+      while (closedCounter.get() < numPending && System.currentTimeMillis() - start < timeoutMs) {
+        Thread.sleep(10);
+      }
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
+    }
+
+    // Assert that all pending calls have been successfully drained and closed without overflow
+    assertThat(closedCounter.get()).isEqualTo(numPending);
+
+    testPool.close(CloseSessionRequest.getDefaultInstance());
+  }
+
   private static class DelayedClientInterceptor implements ClientInterceptor {
     private final Duration delay;
 

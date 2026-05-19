@@ -66,6 +66,7 @@ import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.Nullable;
@@ -523,19 +524,59 @@ public class SessionPoolImpl<OpenReqT extends Message> implements SessionPool<Op
     }
   }
 
-  @GuardedBy("this")
-  private void tryDrainPendingRpcs() {
-    while (!pendingRpcs.isEmpty()) {
-      if (pendingRpcs.peek().isCancelled) {
-        pendingRpcs.pop();
-        continue;
+  private final AtomicBoolean isDraining = new AtomicBoolean(false);
+
+  @VisibleForTesting
+  void tryDrainPendingRpcs() {
+    if (isDraining.compareAndSet(false, true)) {
+      executorService.execute(this::drainLoop);
+    }
+  }
+
+  private void drainLoop() {
+    try {
+      while (true) {
+        PendingVRpc<?, ?> rpcToDrain = null;
+        SessionHandle handleToUse = null;
+
+        synchronized (this) {
+          if (poolState != PoolState.STARTED || pendingRpcs.isEmpty()) {
+            break;
+          }
+
+          // Clean up cancelled RPCs at the head of the queue
+          while (!pendingRpcs.isEmpty() && pendingRpcs.peek().isCancelled) {
+            pendingRpcs.pop();
+          }
+
+          if (pendingRpcs.isEmpty()) {
+            break;
+          }
+
+          Optional<SessionHandle> handle = picker.pickSession();
+          if (!handle.isPresent()) {
+            break;
+          }
+
+          rpcToDrain = pendingRpcs.removeFirst();
+          handleToUse = handle.get();
+        }
+
+        // Invoke the call outside the lock to prevent deadlocks and recursion
+        if (rpcToDrain != null && handleToUse != null) {
+          rpcToDrain.drainTo(handleToUse);
+        }
       }
-      Optional<SessionHandle> handle = picker.pickSession();
-      if (!handle.isPresent()) {
-        break;
+    } finally {
+      isDraining.set(false);
+      // Double-check to prevent race with newly added RPCs during the transition
+      synchronized (this) {
+        if (poolState == PoolState.STARTED
+            && !pendingRpcs.isEmpty()
+            && picker.pickSession().isPresent()) {
+          tryDrainPendingRpcs();
+        }
       }
-      PendingVRpc<?, ?> rpc = pendingRpcs.removeFirst();
-      rpc.drainTo(handle.get());
     }
   }
 
