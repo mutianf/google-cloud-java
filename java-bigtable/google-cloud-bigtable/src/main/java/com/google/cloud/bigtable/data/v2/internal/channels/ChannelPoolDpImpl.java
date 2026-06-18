@@ -21,10 +21,9 @@ import com.google.bigtable.v2.SessionClientConfiguration.ChannelPoolConfiguratio
 import com.google.bigtable.v2.SessionRequest;
 import com.google.bigtable.v2.SessionResponse;
 import com.google.bigtable.v2.TelemetryConfiguration;
+import com.google.cloud.bigtable.data.v2.internal.csm.attributes.ClientInfo;
 import com.google.cloud.bigtable.data.v2.internal.csm.tracers.DebugTagTracer;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.HashMultiset;
-import com.google.common.collect.Multiset;
 import io.grpc.CallOptions;
 import io.grpc.ClientCall;
 import io.grpc.ManagedChannel;
@@ -39,9 +38,11 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ScheduledExecutorService;
@@ -86,9 +87,9 @@ public class ChannelPoolDpImpl implements ChannelPool {
   @GuardedBy("this")
   private int totalStreams = 0;
 
-  // TODO: replace SocketAddress with AfeId
+  // Per-instance stream counts for sessions still in the startingGroup (AFE not yet known).
   @GuardedBy("this")
-  private final Multiset<AfeId> sessionsPerAfeId = HashMultiset.create();
+  private final Map<ClientInfo, Integer> startingGroupStreamsPerInstance = new HashMap<>();
 
   private ScheduledFuture<?> serviceFuture = null;
 
@@ -157,41 +158,39 @@ public class ChannelPoolDpImpl implements ChannelPool {
 
   @Override
   public synchronized SessionStream newStream(
-      MethodDescriptor<SessionRequest, SessionResponse> desc, CallOptions callOptions) {
+      MethodDescriptor<SessionRequest, SessionResponse> desc,
+      CallOptions callOptions,
+      ClientInfo clientInfo) {
     if (closed) {
       debugTagTracer.record(TelemetryConfiguration.Level.WARN, "channel_pool_new_stream_failed");
       return new FailingSessionStream(Status.UNAVAILABLE.withDescription("ChannelPool is closed"));
     }
-    // Find the AFE with the fewest sessions
+
+    // Find the AFE group with fewest streams for THIS instance that still has headroom.
     Optional<AfeChannelGroup> maybeGroup =
         channelGroups.stream()
-            .filter(g -> g.numStreams < softMaxPerGroup)
-            .min(Comparator.comparingInt(a -> a.numStreams));
+            .filter(g -> g.streamsFor(clientInfo) < softMaxPerGroup)
+            .min(Comparator.comparingInt(g -> g.streamsFor(clientInfo)));
 
-    // Find the first channel that has capacity
     Optional<ChannelWrapper> maybeChannel =
         maybeGroup.flatMap(g -> g.channels.stream().findFirst());
 
-    // try to find a channel that has capacity in the least loaded afe
     final ChannelWrapper channelWrapper =
         maybeChannel.orElseGet(
             () -> {
               log(
                   Level.FINE,
-                  "Couldn't find an existing channel with capacity, num outstanding streams across"
-                      + " all channel groups: %d, num groups: %d",
-                  channelGroups.stream().mapToInt(g -> g.numStreams).sum(),
+                  "Couldn't find an existing channel with capacity for %s,"
+                      + " num outstanding streams: %d, num groups: %d",
+                  clientInfo.getInstanceName(),
+                  channelGroups.stream().mapToInt(AfeChannelGroup::totalStreams).sum(),
                   channelGroups.size());
 
-              // If there is no such channel, then try to add a channel that being resolved
-              // and if no channel is in the process of being added or its already nearing 50%
-              // utilization
-              // during initialization, then add a new channel
               return startingGroup.channels.stream()
                   .filter(w -> w.numOutstanding < softMaxPerGroup / 2)
                   .min(Comparator.comparingInt(w -> w.numOutstanding))
                   .map(
-                      (w) -> {
+                      w -> {
                         log(Level.FINE, "Using a channel thats already connecting");
                         return w;
                       })
@@ -203,14 +202,18 @@ public class ChannelPoolDpImpl implements ChannelPool {
             });
 
     channelWrapper.numOutstanding++;
-    channelWrapper.group.numStreams++;
     totalStreams++;
+    boolean isStarting = channelWrapper.group == startingGroup;
+    if (isStarting) {
+      startingGroupStreamsPerInstance.merge(clientInfo, 1, Integer::sum);
+    } else {
+      channelWrapper.group.incrementStreams(clientInfo);
+    }
 
     ClientCall<SessionRequest, SessionResponse> innerCall =
         channelWrapper.channel.newCall(desc, callOptions);
 
     return new SessionStreamImpl(innerCall) {
-      // mark as null so that onClose can tell if onBeforeSessionStart was never called
       @Nullable AfeId afeId = null;
 
       @Override
@@ -221,8 +224,14 @@ public class ChannelPoolDpImpl implements ChannelPool {
               public void onBeforeSessionStart(PeerInfo peerInfo) {
                 afeId = AfeId.extract(peerInfo);
                 synchronized (ChannelPoolDpImpl.this) {
+                  boolean wasStarting = channelWrapper.group == startingGroup;
                   rehomeChannel(channelWrapper, afeId);
-                  sessionsPerAfeId.add(afeId);
+                  if (wasStarting) {
+                    // Reattribute from starting group to the resolved AFE group.
+                    startingGroupStreamsPerInstance.merge(clientInfo, -1, Integer::sum);
+                    startingGroupStreamsPerInstance.remove(clientInfo, 0);
+                    channelWrapper.group.incrementStreams(clientInfo);
+                  }
                 }
                 super.onBeforeSessionStart(peerInfo);
               }
@@ -231,7 +240,10 @@ public class ChannelPoolDpImpl implements ChannelPool {
               public void onClose(Status status, Metadata trailers) {
                 synchronized (ChannelPoolDpImpl.this) {
                   if (afeId != null) {
-                    sessionsPerAfeId.remove(afeId);
+                    channelWrapper.group.decrementStreams(clientInfo);
+                  } else {
+                    startingGroupStreamsPerInstance.merge(clientInfo, -1, Integer::sum);
+                    startingGroupStreamsPerInstance.remove(clientInfo, 0);
                   }
                   releaseChannel(channelWrapper, status);
                 }
@@ -289,21 +301,19 @@ public class ChannelPoolDpImpl implements ChannelPool {
                 });
     channelWrapper.group = newGroup;
     origGroup.channels.remove(channelWrapper);
-    if (origGroup.channels.isEmpty()) {
+    if (origGroup != startingGroup && origGroup.channels.isEmpty()) {
       channelGroups.remove(origGroup);
     }
-    origGroup.numStreams -= channelWrapper.numOutstanding;
     newGroup.channels.add(channelWrapper);
-    newGroup.numStreams += channelWrapper.numOutstanding;
 
     return;
   }
 
-  // Update accounting when a stream is closed and releases its channel
+  // Update accounting when a stream is closed and releases its channel.
+  // Per-instance stream counts are decremented by the caller (onClose callback in newStream).
   @GuardedBy("this")
   private void releaseChannel(ChannelWrapper channelWrapper, Status status) {
     totalStreams--;
-    channelWrapper.group.numStreams--;
     channelWrapper.numOutstanding--;
 
     if (shouldRecycleChannel(status)) {
@@ -359,10 +369,7 @@ public class ChannelPoolDpImpl implements ChannelPool {
     log(Level.FINE, "Servicing channels");
     dumpState();
 
-    Instant now = Instant.now(clock);
-    Instant createdAtThreshold = now.minus(Duration.ofMinutes(50));
-
-    // Thin out the channels in each group, so that each AFEGroup only has 1 channel
+    // Thin out the channels in each group, so that each AFEGroup only has 1 channel.
     for (AfeChannelGroup group : channelGroups) {
       if (LOGGER.isLoggable(Level.FINEST) && group.channels.size() > 1) {
         log(
@@ -372,25 +379,20 @@ public class ChannelPoolDpImpl implements ChannelPool {
             group.afeId);
       }
       while (group.channels.size() > 1) {
-        // Clean up parallel channels.
-        // Recent channels added to the end, thus removing the oldest from the beginning.
         group.channels.removeFirst().channel.shutdown();
       }
     }
 
-    // try to adjust the groups
-    int desiredGroups = (int) Math.ceil(((float) totalStreams / softMaxPerGroup) * 2);
-    if (desiredGroups > maxGroups) {
-      desiredGroups = maxGroups;
-    } else if (desiredGroups < minGroups) {
-      desiredGroups = minGroups;
-    }
+    // Compute desired group count as the sum of per-instance needs. Each instance sizes
+    // independently based on its own stream load; since different instances go to different AFEs
+    // their desired group counts add up rather than overlap.
+    int desiredGroups = computeDesiredGroups();
 
-    // Right size the groups
+    // Prune only groups that are completely idle across all instances.
     if (desiredGroups < channelGroups.size()) {
-      // Remove extra groups, oldest first
       Iterator<AfeChannelGroup> it =
           channelGroups.stream()
+              .filter(g -> g.totalStreams() == 0)
               .sorted(Comparator.comparing(g -> g.channels.peek().createdAt))
               .limit(channelGroups.size() - desiredGroups)
               .iterator();
@@ -399,20 +401,44 @@ public class ChannelPoolDpImpl implements ChannelPool {
         AfeChannelGroup group = it.next();
         log(
             Level.FINE,
-            "Removing %d channel for %s due to lack of concurrency",
-            group.channels.size(),
+            "Removing idle channel for %s due to lack of concurrency",
             group.afeId);
         removeGroup(group);
       }
     } else if (desiredGroups > channelGroups.size() + startingGroup.channels.size()) {
-      log(Level.FINE, "Adding %d channels", desiredGroups - channelGroups.size());
-      for (int i = channelGroups.size(); i < desiredGroups; i++) {
+      int toAdd = desiredGroups - channelGroups.size() - startingGroup.channels.size();
+      log(Level.FINE, "Adding %d channels", toAdd);
+      for (int i = 0; i < toAdd; i++) {
         addChannel();
       }
     }
 
     log(Level.FINE, "Done servicing channels");
     dumpState();
+  }
+
+  @GuardedBy("this")
+  private int computeDesiredGroups() {
+    // Compute desired groups per AFE based on aggregate load across all instances.
+    // Applying minGroups per-instance would inflate channel count proportionally
+    // to the number of factory children even when they share the same AFE.
+    int total = 0;
+    for (AfeChannelGroup group : channelGroups) {
+      int groupStreams = group.totalStreams();
+      if (groupStreams > 0) {
+        int desired = (int) Math.ceil(((float) groupStreams / softMaxPerGroup) * 2);
+        total += Math.min(desired, maxGroups);
+      }
+    }
+    // Account for streams still in the starting group (not yet assigned to an AFE).
+    int startingStreams =
+        startingGroupStreamsPerInstance.values().stream().mapToInt(Integer::intValue).sum();
+    if (startingStreams > 0) {
+      int desired = (int) Math.ceil(((float) startingStreams / softMaxPerGroup) * 2);
+      total += Math.min(desired, maxGroups);
+    }
+    // Pool-level minimum floor — not applied per instance.
+    return Math.max(total, minGroups);
   }
 
   private void log(Level level, String msg, Throwable throwable) {
@@ -431,10 +457,10 @@ public class ChannelPoolDpImpl implements ChannelPool {
 
     int channels =
         channelGroups.stream().mapToInt((AfeChannelGroup chg) -> chg.channels.size()).sum();
-    String s =
-        sessionsPerAfeId.entrySet().stream()
-            .sorted(Comparator.comparing(e -> e.getElement().toString()))
-            .map(e -> String.format("%d", e.getCount()))
+    String distribution =
+        channelGroups.stream()
+            .sorted(Comparator.comparing(g -> g.afeId.toString()))
+            .map(g -> String.format("%d", g.totalStreams()))
             .collect(Collectors.joining(", "));
 
     log(
@@ -448,16 +474,23 @@ public class ChannelPoolDpImpl implements ChannelPool {
             + ", totalStreams: "
             + totalStreams
             + ", AFEs: "
-            + sessionsPerAfeId.entrySet().size()
+            + channelGroups.size()
             + ", distribution: ["
-            + s
+            + distribution
             + "]");
 
     if (LOGGER.isLoggable(Level.FINEST)) {
       String afeToSessions =
-          sessionsPerAfeId.entrySet().stream()
-              .sorted(Comparator.comparing(e -> e.getElement().toString()))
-              .map(e -> String.format("%s: %d", e.getElement(), e.getCount()))
+          channelGroups.stream()
+              .sorted(Comparator.comparing(g -> g.afeId.toString()))
+              .map(
+                  g -> {
+                    String perInstance =
+                        g.streamsPerInstance.entrySet().stream()
+                            .map(e -> String.format("  %s: %d", e.getKey(), e.getValue()))
+                            .collect(Collectors.joining("\n"));
+                    return String.format("%s (total=%d):\n%s", g.afeId, g.totalStreams(), perInstance);
+                  })
               .collect(Collectors.joining("\n"));
       log(Level.FINEST, "ChannelPool session distribution:\n%s", afeToSessions);
     }
@@ -466,12 +499,28 @@ public class ChannelPoolDpImpl implements ChannelPool {
   static class AfeChannelGroup {
     private final AfeId afeId;
     private final Deque<ChannelWrapper> channels;
-    private int numStreams;
+    final Map<ClientInfo, Integer> streamsPerInstance = new HashMap<>();
 
     public AfeChannelGroup(AfeId afeId) {
       this.afeId = afeId;
       channels = new ArrayDeque<>();
-      numStreams = 0;
+    }
+
+    int streamsFor(ClientInfo clientInfo) {
+      return streamsPerInstance.getOrDefault(clientInfo, 0);
+    }
+
+    int totalStreams() {
+      return streamsPerInstance.values().stream().mapToInt(Integer::intValue).sum();
+    }
+
+    void incrementStreams(ClientInfo clientInfo) {
+      streamsPerInstance.merge(clientInfo, 1, Integer::sum);
+    }
+
+    void decrementStreams(ClientInfo clientInfo) {
+      streamsPerInstance.merge(clientInfo, -1, Integer::sum);
+      streamsPerInstance.remove(clientInfo, 0);
     }
   }
 

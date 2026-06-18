@@ -24,6 +24,7 @@ import com.google.bigtable.v2.SessionRequest;
 import com.google.bigtable.v2.SessionResponse;
 import com.google.cloud.bigtable.data.v2.internal.api.ChannelProviders.ChannelProvider;
 import com.google.cloud.bigtable.data.v2.internal.csm.Metrics;
+import com.google.cloud.bigtable.data.v2.internal.csm.attributes.ClientInfo;
 import com.google.cloud.bigtable.data.v2.internal.util.ClientConfigurationManager;
 import com.google.cloud.bigtable.data.v2.internal.util.ClientConfigurationManager.ListenerHandle;
 import io.grpc.CallOptions;
@@ -174,8 +175,10 @@ public class SwitchingChannelPool implements ChannelPool {
 
   @Override
   public synchronized SessionStream newStream(
-      MethodDescriptor<SessionRequest, SessionResponse> desc, CallOptions callOptions) {
-    return delegate.newStream(desc, callOptions);
+      MethodDescriptor<SessionRequest, SessionResponse> desc,
+      CallOptions callOptions,
+      ClientInfo clientInfo) {
+    return delegate.newStream(desc, callOptions, clientInfo);
   }
 
   private ChannelPool newChannelPoolFromProvider(

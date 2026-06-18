@@ -20,6 +20,7 @@ import com.google.bigtable.v2.SessionRequest;
 import com.google.bigtable.v2.SessionResponse;
 import com.google.cloud.bigtable.data.v2.internal.channels.ChannelPool;
 import com.google.cloud.bigtable.data.v2.internal.channels.SessionStream;
+import com.google.cloud.bigtable.data.v2.internal.csm.attributes.ClientInfo;
 import io.grpc.CallOptions;
 import io.grpc.MethodDescriptor;
 
@@ -28,17 +29,20 @@ public final class SessionFactory {
   private final ChannelPool channelPool;
   private final MethodDescriptor<SessionRequest, SessionResponse> methodDescriptor;
   private final CallOptions callOptions;
+  private final ClientInfo clientInfo;
 
   public SessionFactory(
       ChannelPool channelPool,
       MethodDescriptor<SessionRequest, SessionResponse> methodDescriptor,
-      CallOptions callOptions) {
+      CallOptions callOptions,
+      ClientInfo clientInfo) {
     this.channelPool = channelPool;
     this.methodDescriptor = methodDescriptor;
     this.callOptions = callOptions;
+    this.clientInfo = clientInfo;
   }
 
   public SessionStream createNew() {
-    return channelPool.newStream(methodDescriptor, callOptions);
+    return channelPool.newStream(methodDescriptor, callOptions, clientInfo);
   }
 }

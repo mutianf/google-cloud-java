@@ -17,6 +17,7 @@ package com.google.cloud.bigtable.data.v2.internal.compat;
 
 import com.google.api.gax.rpc.UnaryCallSettings;
 import com.google.api.gax.rpc.UnaryCallable;
+import com.google.cloud.bigtable.data.v2.internal.csm.attributes.ClientInfo;
 import com.google.cloud.bigtable.data.v2.models.Query;
 import com.google.cloud.bigtable.data.v2.models.RowAdapter;
 import com.google.cloud.bigtable.data.v2.models.RowMutation;
@@ -24,6 +25,8 @@ import com.google.cloud.bigtable.data.v2.models.RowMutation;
 public interface Shim {
 
   void close();
+
+  Shim createChild(ClientInfo childClientInfo);
 
   <RowT> UnaryCallable<Query, RowT> decorateReadRow(
       UnaryCallable<Query, RowT> classic,

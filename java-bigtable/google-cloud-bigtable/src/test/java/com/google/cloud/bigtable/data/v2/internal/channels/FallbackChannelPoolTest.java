@@ -32,6 +32,8 @@ import com.google.bigtable.v2.SessionResponse;
 import com.google.cloud.bigtable.data.v2.internal.channels.SessionStream.Listener;
 import com.google.cloud.bigtable.data.v2.internal.csm.Metrics;
 import com.google.cloud.bigtable.data.v2.internal.csm.NoopMetrics;
+import com.google.cloud.bigtable.data.v2.internal.csm.attributes.ClientInfo;
+import com.google.cloud.bigtable.data.v2.internal.api.InstanceName;
 import io.grpc.CallOptions;
 import io.grpc.Metadata;
 import io.grpc.MethodDescriptor;
@@ -65,6 +67,11 @@ class FallbackChannelPoolTest {
 
   private static final MethodDescriptor<SessionRequest, SessionResponse> methodDescriptor =
       FakeSessionGrpc.getOpenSessionMethod();
+  private static final ClientInfo TEST_CLIENT_INFO =
+      ClientInfo.builder()
+          .setInstanceName(InstanceName.of("test-project", "test-instance"))
+          .setAppProfileId("")
+          .build();
 
   private FallbackConfiguration config;
   private FallbackChannelPool pool;
@@ -91,8 +98,8 @@ class FallbackChannelPoolTest {
               return future;
             });
 
-    lenient().when(primary.newStream(any(), any())).thenReturn(primaryStream);
-    lenient().when(secondary.newStream(any(), any())).thenReturn(secondaryStream);
+    lenient().when(primary.newStream(any(), any(), any())).thenReturn(primaryStream);
+    lenient().when(secondary.newStream(any(), any(), any())).thenReturn(secondaryStream);
 
     metrics = new NoopMetrics();
     pool = new FallbackChannelPool(config, metrics.getPoolFallbackListener(), exec);
@@ -153,8 +160,8 @@ class FallbackChannelPoolTest {
     pool.start();
     SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT);
 
-    verify(primary).newStream(any(), any());
-    verify(secondary, never()).newStream(any(), any());
+    verify(primary).newStream(any(), any(), any());
+    verify(secondary, never()).newStream(any(), any(), any());
 
     // Verify delegation
     stream.sendMessage(null);
@@ -178,7 +185,7 @@ class FallbackChannelPoolTest {
 
     // Next stream should go to secondary
     SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary).newStream(any(), any());
+    verify(secondary).newStream(any(), any(), any());
 
     // Verify delegation
     stream.sendMessage(null);
@@ -205,7 +212,7 @@ class FallbackChannelPoolTest {
     checkTask.run();
 
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary, never()).newStream(any(), any());
+    verify(secondary, never()).newStream(any(), any(), any());
   }
 
   @Test
@@ -223,7 +230,7 @@ class FallbackChannelPoolTest {
     checkTask.run();
 
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary, never()).newStream(any(), any());
+    verify(secondary, never()).newStream(any(), any(), any());
   }
 
   @Test
@@ -243,7 +250,7 @@ class FallbackChannelPoolTest {
     checkTask.run();
 
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary).newStream(any(), any());
+    verify(secondary).newStream(any(), any(), any());
   }
 
   @Test
@@ -274,7 +281,7 @@ class FallbackChannelPoolTest {
     checkTask.run(); // Now using secondary
 
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary).newStream(any(), any());
+    verify(secondary).newStream(any(), any(), any());
 
     // Disable fallback
     FallbackConfiguration disabledConfig = config.toBuilder().setEnabled(false).build();
@@ -282,14 +289,14 @@ class FallbackChannelPoolTest {
 
     // Should switch back to primary
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(primary, times(2)).newStream(any(), any());
+    verify(primary, times(2)).newStream(any(), any(), any());
 
     // Even with failures, should not switch to secondary anymore
     openSessionWithError(primaryStream, Status.UNAVAILABLE);
 
     checkTask.run();
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary, times(1)).newStream(any(), any()); // Still 1 from before
+    verify(secondary, times(1)).newStream(any(), any(), any()); // Still 1 from before
   }
 
   @Test
@@ -306,7 +313,7 @@ class FallbackChannelPoolTest {
     checkTask.run();
     // 0.5 < 0.6, so should NOT switch
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary, never()).newStream(any(), any());
+    verify(secondary, never()).newStream(any(), any(), any());
 
     // Update to a lower error rate
     newConfig = config.toBuilder().setErrorRate(0.5).build();
@@ -319,7 +326,7 @@ class FallbackChannelPoolTest {
     checkTask.run();
     // 0.5 >= 0.5, so should switch
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary).newStream(any(), any());
+    verify(secondary).newStream(any(), any(), any());
   }
 
   @Test
@@ -335,7 +342,7 @@ class FallbackChannelPoolTest {
     checkTask.run();
     // Fallback is disabled, should NOT switch
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary, never()).newStream(any(), any());
+    verify(secondary, never()).newStream(any(), any(), any());
 
     // Update config to enable fallback
     FallbackConfiguration newConfig = config.toBuilder().setEnabled(true).build();
@@ -348,7 +355,7 @@ class FallbackChannelPoolTest {
     checkTask.run();
     // 1.0 > 0.5, so should switch
     pool.newStream(methodDescriptor, CallOptions.DEFAULT);
-    verify(secondary).newStream(any(), any());
+    verify(secondary).newStream(any(), any(), any());
   }
 
   @Test

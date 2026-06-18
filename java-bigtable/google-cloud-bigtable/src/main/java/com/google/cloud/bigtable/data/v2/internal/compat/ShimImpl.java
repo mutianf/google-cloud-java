@@ -73,6 +73,7 @@ public class ShimImpl implements Shim {
 
   private final ClientConfigurationManager configManager;
   private final Client client;
+  private final boolean isChild;
 
   private final ReadRowShimInner readRowShimInner;
   private final MutateRowShim mutateRowShim;
@@ -173,9 +174,13 @@ public class ShimImpl implements Shim {
   }
 
   public ShimImpl(ClientConfigurationManager configManager, Client client) {
+    this(configManager, client, false);
+  }
+
+  private ShimImpl(ClientConfigurationManager configManager, Client client, boolean isChild) {
     this.configManager = configManager;
     this.client = client;
-
+    this.isChild = isChild;
     this.readRowShimInner = new ReadRowShimInner(client);
     this.mutateRowShim = new MutateRowShim(client);
   }
@@ -252,7 +257,14 @@ public class ShimImpl implements Shim {
   @Override
   public void close() {
     client.close();
-    configManager.close();
+    if (!isChild) {
+      configManager.close();
+    }
+  }
+
+  @Override
+  public Shim createChild(ClientInfo childClientInfo) {
+    return new ShimImpl(configManager, client.createChild(childClientInfo), true);
   }
 
   @Override

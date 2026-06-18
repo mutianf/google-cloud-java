@@ -20,6 +20,7 @@ import com.google.bigtable.v2.SessionClientConfiguration.ChannelPoolConfiguratio
 import com.google.bigtable.v2.SessionClientConfiguration.ChannelPoolConfiguration.DirectAccessWithFallback;
 import com.google.bigtable.v2.SessionRequest;
 import com.google.bigtable.v2.SessionResponse;
+import com.google.cloud.bigtable.data.v2.internal.csm.attributes.ClientInfo;
 import com.google.cloud.bigtable.data.v2.internal.csm.tracers.PoolFallbackListener;
 import com.google.cloud.bigtable.data.v2.internal.csm.tracers.PoolFallbackListener.ChannelFallbackReason;
 import com.google.common.base.Preconditions;
@@ -123,9 +124,11 @@ public class FallbackChannelPool implements ChannelPool {
 
   @Override
   public SessionStream newStream(
-      MethodDescriptor<SessionRequest, SessionResponse> desc, CallOptions callOptions) {
+      MethodDescriptor<SessionRequest, SessionResponse> desc,
+      CallOptions callOptions,
+      ClientInfo clientInfo) {
     final ChannelPool current = currentPool.get();
-    final SessionStream stream = current.newStream(desc, callOptions);
+    final SessionStream stream = current.newStream(desc, callOptions, clientInfo);
 
     return new ForwardingSessionStream(stream) {
       private boolean ignoreError;

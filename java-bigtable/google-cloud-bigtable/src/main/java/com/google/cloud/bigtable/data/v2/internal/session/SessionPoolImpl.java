@@ -181,7 +181,8 @@ public class SessionPoolImpl<OpenReqT extends Message> implements SessionPool<Op
     this.featureFlags = featureFlags;
     this.info = SessionPoolInfo.create(clientInfo, sessionDescriptor, name);
     this.factory =
-        new SessionFactory(channelPool, sessionDescriptor.getMethodDescriptor(), callOptions);
+        new SessionFactory(
+            channelPool, sessionDescriptor.getMethodDescriptor(), callOptions, clientInfo);
     this.descriptor = sessionDescriptor;
     this.executorService = executorService;
 

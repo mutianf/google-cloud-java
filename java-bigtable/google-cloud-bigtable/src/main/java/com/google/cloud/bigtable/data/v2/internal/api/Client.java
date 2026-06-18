@@ -73,7 +73,7 @@ public class Client implements AutoCloseable {
   private final Resource<ScheduledExecutorService> backgroundExecutor;
 
   private final CallOptions defaultCallOptions;
-  private final ChannelPool channelPool;
+  private final Resource<ChannelPool> channelPool;
   private final Resource<Metrics> metrics;
   private final Resource<ClientConfigurationManager> configManager;
 
@@ -153,6 +153,22 @@ public class Client implements AutoCloseable {
         Resource.createOwned(backgroundExecutor, backgroundExecutor::shutdown));
   }
 
+  private Client(
+      FeatureFlags featureFlags,
+      ClientInfo clientInfo,
+      Resource<ChannelPool> channelPool,
+      Resource<Metrics> metrics,
+      Resource<ClientConfigurationManager> configManager,
+      Resource<ScheduledExecutorService> bgExecutor) {
+    this.featureFlags = featureFlags;
+    this.clientInfo = clientInfo;
+    this.channelPool = channelPool;
+    this.metrics = metrics;
+    this.configManager = configManager;
+    this.backgroundExecutor = bgExecutor;
+    this.defaultCallOptions = CallOptions.DEFAULT;
+  }
+
   public Client(
       FeatureFlags featureFlags,
       ClientInfo clientInfo,
@@ -181,13 +197,14 @@ public class Client implements AutoCloseable {
                     // TODO: consider localizing this for large reads
                     .maxInboundMessageSize(256 * 1024 * 1024));
 
-    channelPool =
+    ChannelPool pool =
         new SwitchingChannelPool(
             configuredChannelProvider,
             configManager.get(),
             metrics.get(),
             backgroundExecutor.get());
-    channelPool.start();
+    pool.start();
+    channelPool = Resource.createOwned(pool, pool::close);
   }
 
   @Override
@@ -199,10 +216,20 @@ public class Client implements AutoCloseable {
                     .setReason(CloseSessionReason.CLOSE_SESSION_REASON_USER)
                     .setDescription("Client closing")
                     .build()));
-    metrics.close();
     channelPool.close();
+    metrics.close();
     configManager.close();
     backgroundExecutor.close();
+  }
+
+  public Client createChild(ClientInfo childClientInfo) {
+    return new Client(
+        featureFlags,
+        childClientInfo,
+        Resource.createShared(channelPool.get()),
+        Resource.createShared(metrics.get()),
+        Resource.createShared(configManager.get()),
+        Resource.createShared(backgroundExecutor.get()));
   }
 
   public TableAsync openTableAsync(String tableId, Permission permission) {
@@ -211,7 +238,7 @@ public class Client implements AutoCloseable {
             featureFlags,
             clientInfo,
             configManager.get(),
-            channelPool,
+            channelPool.get(),
             defaultCallOptions,
             tableId,
             permission,
@@ -228,7 +255,7 @@ public class Client implements AutoCloseable {
             featureFlags,
             clientInfo,
             configManager.get(),
-            channelPool,
+            channelPool.get(),
             defaultCallOptions,
             tableId,
             viewId,
@@ -246,7 +273,7 @@ public class Client implements AutoCloseable {
             featureFlags,
             clientInfo,
             configManager.get(),
-            channelPool,
+            channelPool.get(),
             defaultCallOptions,
             viewId,
             permission,

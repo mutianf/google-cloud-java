@@ -93,7 +93,7 @@ class ChannelPoolDpImplTest {
         new ChannelPoolDpImpl(channelSupplier, defaultConfig, debugTagTracer, bgExecutor);
 
     SessionStream ignored =
-        pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT);
+        pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO);
 
     // Only 1 channel created
     verify(channelSupplier, times(1)).get();
@@ -112,7 +112,7 @@ class ChannelPoolDpImplTest {
 
     // Starting channels are half-filled.
     for (int i = 0; i < pool.softMaxPerGroup / 2; i++) {
-      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT);
+      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO);
     }
     // Only 1 channel created.
     verify(channelSupplier, times(1)).get();
@@ -124,7 +124,7 @@ class ChannelPoolDpImplTest {
     doReturn(otherChannel).when(channelSupplier).get();
     when(otherChannel.newCall(any(), any())).thenReturn(clientCall);
 
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT);
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(channelSupplier, times(2)).get();
     verify(otherChannel, times(1)).newCall(any(), any());
 
@@ -141,7 +141,7 @@ class ChannelPoolDpImplTest {
 
     // fill up the channel
     for (int i = 0; i < pool.softMaxPerGroup / 2; i++) {
-      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
           .start(Mockito.mock(Listener.class), new Metadata());
     }
 
@@ -150,7 +150,7 @@ class ChannelPoolDpImplTest {
     value.onClose(Status.OK, new Metadata());
 
     // next call should not trigger creation of another channel
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
         .start(Mockito.mock(Listener.class), new Metadata());
 
     // So invocation count should stay at 1 from the first channel
@@ -175,7 +175,7 @@ class ChannelPoolDpImplTest {
 
     // fill up 2 channels
     for (int i = 0; i < pool.softMaxPerGroup; i++) {
-      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
           .start(Mockito.mock(Listener.class), new Metadata());
     }
     verify(channelSupplier, times(2)).get();
@@ -186,7 +186,7 @@ class ChannelPoolDpImplTest {
     allListeners.get(0).onClose(Status.OK, new Metadata());
 
     // next call should be created on the first channel
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
         .start(Mockito.mock(Listener.class), new Metadata());
 
     // Now the first channel has an extra call
@@ -213,7 +213,7 @@ class ChannelPoolDpImplTest {
     int numSessions = numChannels * pool.softMaxPerGroup / 2;
 
     for (int i = 0; i < numSessions; i++) {
-      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
           .start(Mockito.mock(Listener.class), new Metadata());
     }
 
@@ -260,7 +260,7 @@ class ChannelPoolDpImplTest {
     int numSessions = numChannels * pool.softMaxPerGroup / 2;
 
     for (int i = 0; i < numSessions; i++) {
-      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+      pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
           .start(Mockito.mock(Listener.class), new Metadata());
     }
 
@@ -313,7 +313,7 @@ class ChannelPoolDpImplTest {
     ChannelPool pool =
         new ChannelPoolDpImpl(channelSupplier, defaultConfig, debugTagTracer, bgExecutor);
 
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
         .start(Mockito.mock(Listener.class), new Metadata());
 
     // Only 1 channel created initially
@@ -342,7 +342,7 @@ class ChannelPoolDpImplTest {
     ChannelPool pool =
         new ChannelPoolDpImpl(channelSupplier, defaultConfig, debugTagTracer, bgExecutor);
 
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
         .start(Mockito.mock(Listener.class), new Metadata());
 
     ClientCall.Listener<Object> value = listener.getValue();
@@ -359,7 +359,7 @@ class ChannelPoolDpImplTest {
     value.onClose(Status.OK, new Metadata());
 
     // Another call
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
         .start(Mockito.mock(Listener.class), new Metadata());
 
     value = listener.getValue();
@@ -386,9 +386,9 @@ class ChannelPoolDpImplTest {
         new ChannelPoolDpImpl(channelSupplier, defaultConfig, debugTagTracer, bgExecutor);
 
     // Create 2 streams on the same channel
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
         .start(Mockito.mock(Listener.class), new Metadata());
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
         .start(Mockito.mock(Listener.class), new Metadata());
 
     // Initially 1 channel
@@ -427,11 +427,11 @@ class ChannelPoolDpImplTest {
         new ChannelPoolDpImpl(channelSupplier, defaultConfig, debugTagTracer, bgExecutor);
 
     // 1. Create stream1 on channel1
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
         .start(Mockito.mock(Listener.class), new Metadata());
 
     // 2. Create stream2 on channel1 to trigger recycle
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT)
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO)
         .start(Mockito.mock(Listener.class), new Metadata());
 
     ClientCall.Listener<Object> listener1 = listener.getAllValues().get(0);
@@ -459,7 +459,7 @@ class ChannelPoolDpImplTest {
 
     // 5. Try to create a new stream.
     // It should NOT pick channel1 because it's recycled/shutdown.
-    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT);
+    pool.newStream(FakeSessionGrpc.getOpenSessionMethod(), CallOptions.DEFAULT, TEST_CLIENT_INFO);
 
     // BUG: If channel1 was re-added to a group, the picker might have picked it.
     // channel.newCall was called 2 times (steps 1 and 2). It should NOT be called a 3rd time.

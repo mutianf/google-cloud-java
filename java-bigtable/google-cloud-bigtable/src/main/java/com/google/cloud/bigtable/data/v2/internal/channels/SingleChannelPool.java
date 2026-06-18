@@ -19,6 +19,7 @@ package com.google.cloud.bigtable.data.v2.internal.channels;
 import com.google.bigtable.v2.SessionClientConfiguration.ChannelPoolConfiguration;
 import com.google.bigtable.v2.SessionRequest;
 import com.google.bigtable.v2.SessionResponse;
+import com.google.cloud.bigtable.data.v2.internal.csm.attributes.ClientInfo;
 import io.grpc.CallOptions;
 import io.grpc.ManagedChannel;
 import io.grpc.MethodDescriptor;
@@ -44,7 +45,9 @@ public class SingleChannelPool implements ChannelPool {
 
   @Override
   public SessionStream newStream(
-      MethodDescriptor<SessionRequest, SessionResponse> desc, CallOptions callOptions) {
+      MethodDescriptor<SessionRequest, SessionResponse> desc,
+      CallOptions callOptions,
+      ClientInfo clientInfo) {
     return new SessionStreamImpl(channel.newCall(desc, callOptions));
   }
 
