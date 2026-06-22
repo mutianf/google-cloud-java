@@ -211,7 +211,7 @@ class FallbackChannelPoolTest {
 
     checkTask.run();
 
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary, never()).newStream(any(), any(), any());
   }
 
@@ -229,7 +229,7 @@ class FallbackChannelPoolTest {
 
     checkTask.run();
 
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary, never()).newStream(any(), any(), any());
   }
 
@@ -249,7 +249,7 @@ class FallbackChannelPoolTest {
     // 1 failure. Rate 1.0 > 0.5.
     checkTask.run();
 
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary).newStream(any(), any(), any());
   }
 
@@ -280,7 +280,7 @@ class FallbackChannelPoolTest {
 
     checkTask.run(); // Now using secondary
 
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary).newStream(any(), any(), any());
 
     // Disable fallback
@@ -288,14 +288,14 @@ class FallbackChannelPoolTest {
     pool.updateConfig(disabledConfig);
 
     // Should switch back to primary
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(primary, times(2)).newStream(any(), any(), any());
 
     // Even with failures, should not switch to secondary anymore
     openSessionWithError(primaryStream, Status.UNAVAILABLE);
 
     checkTask.run();
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary, times(1)).newStream(any(), any(), any()); // Still 1 from before
   }
 
@@ -312,7 +312,7 @@ class FallbackChannelPoolTest {
 
     checkTask.run();
     // 0.5 < 0.6, so should NOT switch
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary, never()).newStream(any(), any(), any());
 
     // Update to a lower error rate
@@ -325,7 +325,7 @@ class FallbackChannelPoolTest {
 
     checkTask.run();
     // 0.5 >= 0.5, so should switch
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary).newStream(any(), any(), any());
   }
 
@@ -341,7 +341,7 @@ class FallbackChannelPoolTest {
 
     checkTask.run();
     // Fallback is disabled, should NOT switch
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary, never()).newStream(any(), any(), any());
 
     // Update config to enable fallback
@@ -354,7 +354,7 @@ class FallbackChannelPoolTest {
 
     checkTask.run();
     // 1.0 > 0.5, so should switch
-    pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary).newStream(any(), any(), any());
   }
 
