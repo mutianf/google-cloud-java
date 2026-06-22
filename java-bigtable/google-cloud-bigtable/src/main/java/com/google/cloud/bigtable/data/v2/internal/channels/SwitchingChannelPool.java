@@ -194,7 +194,7 @@ public class SwitchingChannelPool implements ChannelPool {
     }
 
     if (logName != null) {
-      return new ChannelPoolDpImpl(
+      return new PoolRouter(
           channelBuilderToSupplier(channelProvider.newChannelBuilder(), interceptors),
           currentConfiguration,
           logName,
@@ -202,7 +202,7 @@ public class SwitchingChannelPool implements ChannelPool {
           backgroundExecutor);
     }
 
-    return new ChannelPoolDpImpl(
+    return new PoolRouter(
         channelBuilderToSupplier(channelProvider.newChannelBuilder(), interceptors),
         currentConfiguration,
         metrics.getDebugTagTracer(),
