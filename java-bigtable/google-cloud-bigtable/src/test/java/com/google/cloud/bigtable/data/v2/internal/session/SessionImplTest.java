@@ -121,7 +121,10 @@ public class SessionImplTest {
     poolInfo = SessionPoolInfo.create(clientInfo, FakeDescriptor.FAKE_SESSION, "fake-pool");
     sessionFactory =
         new SessionFactory(
-            channelPool, FakeDescriptor.FAKE_SESSION.getMethodDescriptor(), CallOptions.DEFAULT);
+            channelPool,
+            FakeDescriptor.FAKE_SESSION.getMethodDescriptor(),
+            CallOptions.DEFAULT,
+            clientInfo);
   }
 
   @AfterEach

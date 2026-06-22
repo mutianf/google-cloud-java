@@ -118,7 +118,7 @@ class FallbackChannelPoolTest {
     count++;
     invocationCount.put(stream, count);
 
-    SessionStream s = pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    SessionStream s = pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     s.start(listener, new Metadata());
     verify(stream, times(count)).start(listenerCaptor.capture(), any());
     return listenerCaptor.getValue();
@@ -158,7 +158,7 @@ class FallbackChannelPoolTest {
   @Test
   void testRoutesToPrimaryByDefault() {
     pool.start();
-    SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
 
     verify(primary).newStream(any(), any(), any());
     verify(secondary, never()).newStream(any(), any(), any());
@@ -184,7 +184,7 @@ class FallbackChannelPoolTest {
     checkTask.run(); // Execute check
 
     // Next stream should go to secondary
-    SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     verify(secondary).newStream(any(), any(), any());
 
     // Verify delegation
@@ -196,7 +196,7 @@ class FallbackChannelPoolTest {
   void testForceCloseDoesNotCountAsFailure() {
     pool.start();
 
-    SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
     stream.start(listener, new Metadata());
 
     verify(primaryStream).start(listenerCaptor.capture(), any());
@@ -238,7 +238,7 @@ class FallbackChannelPoolTest {
     doThrow(new RuntimeException("boom")).when(primaryStream).start(any(), any());
 
     pool.start();
-    SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT);
+    SessionStream stream = pool.newStream(methodDescriptor, CallOptions.DEFAULT, TEST_CLIENT_INFO);
 
     try {
       stream.start(listener, new Metadata());

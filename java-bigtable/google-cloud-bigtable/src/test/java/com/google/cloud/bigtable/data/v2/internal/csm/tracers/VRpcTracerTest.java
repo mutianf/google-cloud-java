@@ -156,7 +156,10 @@ public class VRpcTracerTest {
     // TODO: extract this out to a SimpleSessionPoolImpl that simply wraps a single Session
     SessionFactory sessionFactory =
         new SessionFactory(
-            channelPool, FakeDescriptor.FAKE_SESSION.getMethodDescriptor(), CallOptions.DEFAULT);
+            channelPool,
+            FakeDescriptor.FAKE_SESSION.getMethodDescriptor(),
+            CallOptions.DEFAULT,
+            clientInfo);
     session = new SessionImpl(metrics, poolInfo, 0, sessionFactory.createNew());
   }
 
