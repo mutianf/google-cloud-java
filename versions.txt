@@ -1,7 +1,7 @@
 # Format:
 # module:released-version:current-version
 
-google-cloud-java:1.91.0:1.91.1
+google-cloud-java:1.91.1:1.92.0-SNAPSHOT
 google-cloud-pom-parent:1.91.0:1.92.0-SNAPSHOT
 google-cloud-accessapproval:2.98.0:2.99.0-SNAPSHOT
 grpc-google-cloud-accessapproval-v1:2.98.0:2.99.0-SNAPSHOT
@@ -402,13 +402,13 @@ proto-google-cloud-redis-v1beta1:2.100.0:2.101.0-SNAPSHOT
 google-cloud-resourcemanager:1.99.0:1.100.0-SNAPSHOT
 grpc-google-cloud-resourcemanager-v3:1.99.0:1.100.0-SNAPSHOT
 proto-google-cloud-resourcemanager-v3:1.99.0:1.100.0-SNAPSHOT
-google-cloud-retail:2.99.1:2.99.1
-grpc-google-cloud-retail-v2:2.99.1:2.99.1
-proto-google-cloud-retail-v2:2.99.1:2.99.1
-proto-google-cloud-retail-v2alpha:2.99.1:2.99.1
-proto-google-cloud-retail-v2beta:2.99.1:2.99.1
-grpc-google-cloud-retail-v2alpha:2.99.1:2.99.1
-grpc-google-cloud-retail-v2beta:2.99.1:2.99.1
+google-cloud-retail:2.99.1:2.100.0-SNAPSHOT
+grpc-google-cloud-retail-v2:2.99.1:2.100.0-SNAPSHOT
+proto-google-cloud-retail-v2:2.99.1:2.100.0-SNAPSHOT
+proto-google-cloud-retail-v2alpha:2.99.1:2.100.0-SNAPSHOT
+proto-google-cloud-retail-v2beta:2.99.1:2.100.0-SNAPSHOT
+grpc-google-cloud-retail-v2alpha:2.99.1:2.100.0-SNAPSHOT
+grpc-google-cloud-retail-v2beta:2.99.1:2.100.0-SNAPSHOT
 google-cloud-run:0.97.0:0.98.0-SNAPSHOT
 proto-google-cloud-run-v2:0.97.0:0.98.0-SNAPSHOT
 grpc-google-cloud-run-v2:0.97.0:0.98.0-SNAPSHOT
@@ -960,7 +960,7 @@ grpc-google-cloud-ces-v1beta:0.13.0:0.14.0-SNAPSHOT
 proto-google-cloud-vectorsearch-v1:0.19.0:0.20.0-SNAPSHOT
 grpc-google-cloud-vectorsearch-v1:0.19.0:0.20.0-SNAPSHOT
 google-cloud-bigquery:2.71.0:2.72.0-SNAPSHOT
-google-cloud-bigquery-jdbc:1.4.0:1.5.0-SNAPSHOT
+google-cloud-bigquery-jdbc:1.4.1:1.5.0-SNAPSHOT
 proto-google-cloud-networkconnectivity-v1beta:1.96.0:1.97.0-SNAPSHOT
 grpc-google-cloud-networkconnectivity-v1beta:1.96.0:1.97.0-SNAPSHOT
 proto-google-cloud-hypercomputecluster-v1:0.17.0:0.18.0-SNAPSHOT
@@ -1049,8 +1049,8 @@ google-cloud-developer-knowledge:0.5.0:0.6.0-SNAPSHOT
 proto-google-cloud-developer-knowledge-v1:0.5.0:0.6.0-SNAPSHOT
 grpc-google-cloud-developer-knowledge-v1:0.5.0:0.6.0-SNAPSHOT
 google-cloud-backstory:0.5.0:0.6.0-SNAPSHOT
-google-cloud-bom:0.269.1:0.269.1
-libraries-bom:26.88.1:26.88.1
+google-cloud-bom:0.269.1:0.270.0-SNAPSHOT
+libraries-bom:26.88.1:26.89.0-SNAPSHOT
 java-cloud-bom-tests:0.84.0:0.85.0-SNAPSHOT
 full-convergence-check:0.87.0:0.88.0-SNAPSHOT
 google-cloud-shared-config:1.21.0:1.22.0-SNAPSHOT
@@ -1119,3 +1119,7 @@ google-shopping-merchant-loyaltycustomers-bom:0.1.0:0.2.0-SNAPSHOT
 proto-google-shopping-merchant-loyaltycustomers-v1:0.1.0:0.2.0-SNAPSHOT
 grpc-google-shopping-merchant-loyaltycustomers-v1:0.1.0:0.2.0-SNAPSHOT
 google-shopping-merchant-loyaltycustomers:0.1.0:0.2.0-SNAPSHOT
+grpc-google-cloud-backupdr-v1beta:0.56.0:0.57.0-SNAPSHOT
+grpc-google-cloud-networkservices-v1beta1:0.53.0:0.54.0-SNAPSHOT
+proto-google-cloud-backupdr-v1beta:0.56.0:0.57.0-SNAPSHOT
+proto-google-cloud-networkservices-v1beta1:0.53.0:0.54.0-SNAPSHOT

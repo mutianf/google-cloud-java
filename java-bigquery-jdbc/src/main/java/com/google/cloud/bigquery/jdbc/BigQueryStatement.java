@@ -50,12 +50,14 @@ import com.google.cloud.bigquery.exception.BigQueryJdbcSqlFeatureNotSupportedExc
 import com.google.cloud.bigquery.exception.BigQueryJdbcSqlSyntaxErrorException;
 import com.google.cloud.bigquery.storage.v1.ArrowRecordBatch;
 import com.google.cloud.bigquery.storage.v1.ArrowSchema;
+import com.google.cloud.bigquery.storage.v1.ArrowSerializationOptions;
 import com.google.cloud.bigquery.storage.v1.BigQueryReadClient;
 import com.google.cloud.bigquery.storage.v1.CreateReadSessionRequest;
 import com.google.cloud.bigquery.storage.v1.DataFormat;
 import com.google.cloud.bigquery.storage.v1.ReadRowsRequest;
 import com.google.cloud.bigquery.storage.v1.ReadRowsResponse;
 import com.google.cloud.bigquery.storage.v1.ReadSession;
+import com.google.cloud.bigquery.storage.v1.ReadSession.TableReadOptions;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.util.concurrent.Uninterruptibles;
 import io.grpc.Status;
@@ -240,7 +242,7 @@ public class BigQueryStatement extends BigQueryNoOpsStatement {
    */
   @Override
   public ResultSet executeQuery(String sql) throws SQLException {
-    checkClosed();
+    validateExecution();
     return BigQueryJdbcOpenTelemetry.withTracing(
         "BigQueryStatement.executeQuery", this.connection, sql, () -> executeQueryImpl(sql));
   }
@@ -265,7 +267,7 @@ public class BigQueryStatement extends BigQueryNoOpsStatement {
 
   @Override
   public long executeLargeUpdate(String sql) throws SQLException {
-    checkClosed();
+    validateExecution();
     return BigQueryJdbcOpenTelemetry.withTracing(
         "BigQueryStatement.executeLargeUpdate",
         this.connection,
@@ -306,7 +308,7 @@ public class BigQueryStatement extends BigQueryNoOpsStatement {
 
   @Override
   public boolean execute(String sql) throws SQLException {
-    checkClosed();
+    validateExecution();
     return BigQueryJdbcOpenTelemetry.withTracing(
         "BigQueryStatement.execute", this.connection, sql, () -> executeImpl(sql));
   }
@@ -883,6 +885,10 @@ public class BigQueryStatement extends BigQueryNoOpsStatement {
       // format
       ReadSession.Builder sessionBuilder =
           ReadSession.newBuilder().setTable(srcTable).setDataFormat(DataFormat.ARROW);
+      TableReadOptions readOptions = buildTableReadOptions();
+      if (readOptions != null) {
+        sessionBuilder.setReadOptions(readOptions);
+      }
 
       CreateReadSessionRequest.Builder builder =
           CreateReadSessionRequest.newBuilder()
@@ -923,18 +929,21 @@ public class BigQueryStatement extends BigQueryNoOpsStatement {
             "Failed to execute query: Unable to allocate background threads to process the query results. Connection-scoped thread pool limit of 100 threads was reached or system is out of memory.",
             ex);
       }
-      if (ex instanceof RuntimeException) {
-        throw (ex instanceof BigQueryJdbcRuntimeException)
-            ? (BigQueryJdbcRuntimeException) ex
-            : new BigQueryJdbcRuntimeException(ex);
-      }
-      if (ex instanceof SQLException) {
-        throw (ex instanceof BigQueryJdbcException)
-            ? (BigQueryJdbcException) ex
-            : new BigQueryJdbcException(ex);
-      }
       throw new BigQueryJdbcException(ex.getMessage(), ex);
     }
+  }
+
+  private TableReadOptions buildTableReadOptions() {
+    if (!isEnableTimestampPicos()) {
+      return null;
+    }
+    return TableReadOptions.newBuilder()
+        .setArrowSerializationOptions(
+            ArrowSerializationOptions.newBuilder()
+                .setPicosTimestampPrecision(
+                    ArrowSerializationOptions.PicosTimestampPrecision.TIMESTAMP_PRECISION_PICOS)
+                .build())
+        .build();
   }
 
   /** Asynchronously reads results and populates an arrow record queue */
@@ -1686,6 +1695,7 @@ public class BigQueryStatement extends BigQueryNoOpsStatement {
   @Override
   public int[] executeBatch() throws SQLException {
     LOG.finest("++enter++");
+    validateExecution();
     return BigQueryJdbcOpenTelemetry.withTracing(
         "BigQueryStatement.executeBatch",
         this.connection,
@@ -1844,6 +1854,21 @@ public class BigQueryStatement extends BigQueryNoOpsStatement {
   void checkClosed() throws SQLException {
     if (isClosed()) {
       throw new BigQueryJdbcException("This " + getClass().getName() + " has been closed");
+    }
+  }
+
+  /**
+   * Validates that the statement is open and that execution configuration settings are compatible.
+   *
+   * @throws SQLException if the statement is closed or settings are incompatible
+   */
+  void validateExecution() throws SQLException {
+    checkClosed();
+    if (isEnableTimestampPicos() && getUseLegacySql()) {
+      throw new BigQueryJdbcException(
+          "Picosecond data is incompatible with Legacy SQL. "
+              + "To query your Picosecond data, please set QueryDialect to SQL "
+              + "and restructure your query as a Standard SQL query.");
     }
   }
 
